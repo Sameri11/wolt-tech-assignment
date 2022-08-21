@@ -11,8 +11,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.internal.wait
-import java.util.function.Consumer
 import javax.inject.Inject
 enum class UiState{
     LOADING,
@@ -56,6 +54,7 @@ class MainViewModel @Inject constructor(
                 }
                 .onFailure {
                     _uiState.postValue(UiState.ERROR)
+                    Log.e("MainViewModel", it.message, it)
                 }
 
         }

@@ -1,8 +1,6 @@
 package com.mikhailn.wolt_assignment.ui.main
 
-import android.content.Context
 import android.os.Bundle
-import android.util.Log
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
@@ -12,6 +10,9 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.RecyclerView
 import com.mikhailn.wolt_assignment.R
 import com.mikhailn.wolt_assignment.data.domain.Restaurant
 import com.squareup.picasso.Picasso
@@ -19,36 +20,63 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
 private class RestaurantListAdapter(
-    context: Context,
-    layout: Int,
-    restaurants: List<Restaurant>,
     private val onFavoriteClick: (Restaurant, ImageButton) -> Unit
-) : ArrayAdapter<Restaurant>(context, layout, restaurants) {
-    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-        val view = convertView ?: LayoutInflater.from(context)
-            .inflate(R.layout.restaurant_card, parent, false)
-        val restaurant = getItem(position) ?: return view
+) : ListAdapter<Restaurant, RestaurantListAdapter.ViewHolder>(RestaurantDiffUtilCallback()) {
 
-        val restaurantPicImageView = view.findViewById<ImageView>(R.id.restaurant_pic)
-        val restaurantNameTextView = view.findViewById<TextView>(R.id.restaurant_name)
-        val restaurantDescriptionTextView = view.findViewById<TextView>(R.id.restaurant_description)
+    class RestaurantDiffUtilCallback : DiffUtil.ItemCallback<Restaurant>() {
+        override fun areItemsTheSame(oldItem: Restaurant, newItem: Restaurant): Boolean {
+            return oldItem.id == newItem.id
+        }
 
-        view.findViewById<ImageButton>(R.id.restaurant_favorites_button).apply {
-            isSelected = restaurant.isFavorite
-            setOnClickListener {
-                onFavoriteClick(restaurant, this)
+        override fun areContentsTheSame(oldItem: Restaurant, newItem: Restaurant): Boolean {
+            return oldItem.isFavorite == newItem.isFavorite
+                    && oldItem.name == newItem.name
+                    && oldItem.imageUrl == newItem.imageUrl
+                    && oldItem.shortDescription == newItem.shortDescription
+        }
+
+    }
+
+    class ViewHolder(view: View): RecyclerView.ViewHolder(view) {
+        val restaurantImageView: ImageView
+        val restaurantNameView: TextView
+        val restaurantDescriptionView: TextView
+        val restaurantFavoritesButton: ImageButton
+
+        init {
+            restaurantImageView = view.findViewById(R.id.restaurant_pic)
+            restaurantNameView = view.findViewById(R.id.restaurant_name)
+            restaurantDescriptionView = view.findViewById(R.id.restaurant_description)
+            restaurantFavoritesButton = view.findViewById(R.id.restaurant_favorites_button)
+        }
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.restaurant_card, parent, false)
+        return ViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        currentList[position].apply {
+            Picasso.get()
+                .load(imageUrl)
+                .into(holder.restaurantImageView)
+
+            holder.restaurantNameView.text = name
+            holder.restaurantDescriptionView.text = shortDescription
+
+            holder.restaurantFavoritesButton.let { imgButton ->
+                imgButton.isSelected = isFavorite
+                imgButton.setOnClickListener {
+                    onFavoriteClick(this, imgButton)
+                }
             }
         }
 
-        restaurantNameTextView.text = restaurant.name
-        restaurantDescriptionTextView.text = restaurant.shortDescription
-        if (convertView == null) {
-            Picasso.get()
-                .load(restaurant.imageUrl)
-                .into(restaurantPicImageView);
-        }
+    }
 
-        return view
+    override fun getItemCount(): Int {
+        return currentList.size
     }
 }
 
@@ -60,7 +88,8 @@ class MainFragment : Fragment() {
     }
 
     private val viewModel: MainViewModel by viewModels()
-    private lateinit var restaurantListView: ListView
+    private lateinit var restaurantAdapter: RestaurantListAdapter
+    private lateinit var restaurantRecycler: RecyclerView
     private lateinit var restaurantLoader: ProgressBar
     private lateinit var restaurantError: TextView
 
@@ -69,9 +98,12 @@ class MainFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         val root = inflater.inflate(R.layout.main_fragment, container, false)
-        restaurantListView = root.findViewById(R.id.restaurant_list_view)
+        restaurantRecycler = root.findViewById(R.id.restaurant_list_view)
         restaurantLoader = root.findViewById(R.id.restaurant_loader)
         restaurantError = root.findViewById(R.id.restaurant_error)
+
+        restaurantAdapter = RestaurantListAdapter(this@MainFragment::onFavoriteClicked)
+        restaurantRecycler.adapter = restaurantAdapter
 
         return root
     }
@@ -84,15 +116,15 @@ class MainFragment : Fragment() {
                 UiState.LOADED -> {
                     restaurantLoader.visibility = GONE
                     restaurantError.visibility = GONE
-                    restaurantListView.visibility = VISIBLE
+                    restaurantRecycler.visibility = VISIBLE
                 }
                 UiState.LOADING -> {
-                    restaurantListView.visibility = GONE
+                    restaurantRecycler.visibility = GONE
                     restaurantError.visibility = GONE
                     restaurantLoader.visibility = VISIBLE
                 }
                 UiState.ERROR -> {
-                    restaurantListView.visibility = GONE
+                    restaurantRecycler.visibility = GONE
                     restaurantLoader.visibility = GONE
                     restaurantError.visibility = VISIBLE
                 }
@@ -100,8 +132,8 @@ class MainFragment : Fragment() {
         }
 
         viewModel.restaurants.observe(viewLifecycleOwner) {
-            restaurantListView.findViewById<ListView>(R.id.restaurant_list_view).apply {
-                adapter = RestaurantListAdapter(context, R.layout.restaurant_card, it, this@MainFragment::onFavoriteClicked)
+            restaurantAdapter.apply {
+                submitList(it)
             }
         }
 
